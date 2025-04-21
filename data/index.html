@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Morse Receiver</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #121212;
+            color: #f0f0f0;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        .container {
+            background-color: #1e1e1e;
+            border-radius: 8px;
+            padding: 2rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            text-align: center;
+            max-width: 90%;
+            width: 650px;
+        }
+
+        h1 {
+            margin-top: 0;
+            color: #bb86fc;
+            margin-bottom: 1.5rem;
+        }
+
+        .button {
+            background-color: #bb86fc;
+            color: #121212;
+            border: none;
+            padding: 0.8rem 1.5rem;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: bold;
+            transition: background-color 0.2s;
+            margin-bottom: 1.5rem;
+        }
+
+        .button:hover {
+            background-color: #9d74d3;
+        }
+
+        .status-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .status {
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            font-size: 0.9rem;
+            width: 80%;
+            margin: 0.25rem 0;
+        }
+
+        .connected {
+            background-color: #03dac6;
+            color: #121212;
+        }
+
+        .disconnected {
+            background-color: #cf6679;
+            color: #121212;
+        }
+
+        .result-container {
+            margin-top: 1.5rem;
+            background-color: #2d2d2d;
+            padding: 1rem;
+            border-radius: 4px;
+            text-align: left;
+        }
+
+        .result {
+            margin: 0.5rem 0;
+            word-wrap: break-word;
+            font-family: monospace;
+            font-size: 1rem;
+        }
+
+        #morseresult {
+            color: #bb86fc;
+        }
+
+        #translatedresult {
+            color: #03dac6;
+        }
+
+        .input-container {
+            margin-top: 1.5rem;
+            background-color: #2d2d2d;
+            padding: 1rem;
+            border-radius: 4px;
+        }
+
+        .text-input {
+            width: 80%;
+            padding: 0.8rem;
+            border-radius: 4px;
+            border: 1px solid #bb86fc;
+            background-color: #121212;
+            color: #f0f0f0;
+            font-size: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .morse-output {
+            background-color: #121212;
+            color: #03dac6;
+            padding: 0.8rem;
+            border-radius: 4px;
+            font-family: monospace;
+            text-align: left;
+            min-height: 2.5rem;
+            word-wrap: break-word;
+        }
+
+        .morse-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 0.5rem;
+            margin-top: 1rem;
+            font-size: 0.8rem;
+        }
+
+        .morse-item {
+            background-color: #121212;
+            padding: 0.3rem;
+            border-radius: 4px;
+        }
+
+        .morse-char {
+            font-weight: bold;
+            color: #bb86fc;
+        }
+
+        .morse-code {
+            color: #03dac6;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>Morse Receiver</h1>
+        <button id="initializeBtn" class="button">Initialize</button>
+        <div class="status-container">
+            <p id="connectionStatus" class="status disconnected">Not connected</p>
+            <p id="audioStatus" class="status disconnected">Audio not initialized</p>
+        </div>
+
+        <div class="result-container">
+            <p id="morseresult" class="result">Morse: </p>
+            <p id="translatedresult" class="result">Translated: </p>
+        </div>
+
+        <div class="input-container">
+            <h3>Text to Morse Converter</h3>
+            <input type="text" id="textInput" class="text-input" placeholder="Type text to convert to Morse code"
+                autocomplete="off">
+            <div id="morseOutput" class="morse-output"></div>
+        </div>
+    </div>
+
+    <script>
+        /*
+            ws-sound comms:
+            - START ......... Start the audio signal
+            - STOP .......... Stop the audio signal
+
+            ws comms:
+            - MORSE:STRING ......... The morse string received from the ESP32
+            - TRANSLATE:STRING ..... The translated string received from the ESP32
+            - CLEAR ................ Clear the morse and translated strings
+        */
+
+        // Morse code dictionary
+        const morseCodeMap = {
+            'A': '.-', 'B': '-...', 'C': '-.-.', 'D': '-..', 'E': '.', 'F': '..-.',
+            'G': '--.', 'H': '....', 'I': '..', 'J': '.---', 'K': '-.-', 'L': '.-..',
+            'M': '--', 'N': '-.', 'O': '---', 'P': '.--.', 'Q': '--.-', 'R': '.-.',
+            'S': '...', 'T': '-', 'U': '..-', 'V': '...-', 'W': '.--', 'X': '-..-',
+            'Y': '-.--', 'Z': '--..', '0': '-----', '1': '.----', '2': '..---',
+            '3': '...--', '4': '....-', '5': '.....', '6': '-....', '7': '--...',
+            '8': '---..', '9': '----.'
+        };
+
+        // Function to convert text to Morse code
+        function textToMorse(text) {
+            return text.toUpperCase().split('').map(char => {
+                if (char === ' ') return '   '; // 3 spaces for word separation
+                return morseCodeMap[char] ? morseCodeMap[char] + ' ' : char + ' ';
+            }).join('');
+        }
+
+        // Convert text to Morse code as user types
+        function setupMorseConverter() {
+            const textInput = document.getElementById('textInput');
+            const morseOutput = document.getElementById('morseOutput');
+
+            textInput.addEventListener('input', () => {
+                const text = textInput.value;
+                if (text) {
+                    const morse = textToMorse(text);
+                    morseOutput.textContent = morse;
+                } else {
+                    morseOutput.textContent = '';
+                }
+            });
+        }
+
+        // Populate the grid when the page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            setupMorseConverter();
+        });
+
+        const LOW = 0.0;
+        const HIGH = 0.2;
+
+        let audioCtx;
+        let osc;
+        let gain;
+        let audioInitialized = false;
+        let websocketInitialized = false;
+        let soundWebsocketInitialized = false;
+
+        function setupAudio() {
+            if (audioInitialized) return;
+
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            osc = audioCtx.createOscillator();
+            gain = audioCtx.createGain();
+
+            osc.type = 'sine';
+            osc.frequency.value = 800;
+            gain.gain.value = 0.0;
+
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start(audioCtx.currentTime);
+
+            audioInitialized = true;
+
+            document.getElementById('audioStatus').textContent = 'Audio initialized';
+            document.getElementById('audioStatus').className = 'status connected';
+        }
+
+        let gateway = `ws://${window.location.hostname}/ws`;
+        let soundGateway = `ws://${window.location.hostname}/ws-sound`;
+        let websocket;
+        let soundWebsocket;
+        let statusElement;
+        let initializeButton;
+
+        window.addEventListener('load', () => {
+            statusElement = document.getElementById('connectionStatus');
+            initializeButton = document.getElementById('initializeBtn');
+
+            initializeButton.addEventListener('click', () => {
+                setupAudio();
+
+                if (!websocketInitialized || !websocket || websocket.readyState === WebSocket.CLOSED) {
+                    initWebSocket();
+                    websocketInitialized = true;
+                }
+
+                if (!soundWebsocketInitialized || !soundWebsocket || soundWebsocket.readyState === WebSocket.CLOSED) {
+                    initSoundWebSocket();
+                    soundWebsocketInitialized = true;
+                }
+            });
+        });
+
+        function initWebSocket() {
+            console.log('Trying to open a WebSocket connection…');
+            statusElement.textContent = 'Connecting...';
+            statusElement.className = 'status disconnected';
+
+            websocket = new WebSocket(gateway);
+            websocket.onopen = onOpen;
+            websocket.onclose = onClose;
+            websocket.onmessage = onMessage;
+        }
+
+        function initSoundWebSocket() {
+            console.log('Trying to open a Sound WebSocket connection…');
+
+            soundWebsocket = new WebSocket(soundGateway);
+            soundWebsocket.onopen = () => console.log('Sound WebSocket connected');
+            soundWebsocket.onclose = () => console.log('Sound WebSocket closed');
+            soundWebsocket.onmessage = onSoundMessage;
+        }
+
+        function onOpen(event) {
+            console.log('Connection opened');
+            statusElement.textContent = 'Connected';
+            statusElement.className = 'status connected';
+            initializeButton.textContent = 'Reconnect';
+        }
+
+        function onClose(event) {
+            console.log('Connection closed');
+            statusElement.textContent = 'Connection lost';
+            statusElement.className = 'status disconnected';
+        }
+
+        // Function that receives sound messages
+        function onSoundMessage(event) {
+            if (!audioInitialized) {
+                console.log("Audio not initialized yet");
+                return;
+            }
+
+            if (event.data == "START") {
+                gain.gain.setValueAtTime(HIGH, audioCtx.currentTime);
+            } else if (event.data == "STOP") {
+                gain.gain.setValueAtTime(LOW, audioCtx.currentTime);
+            } else {
+                console.log("Unknown sound message: " + event.data);
+            }
+        }
+
+        // Function that receives the message from the ESP32
+        function onMessage(event) {
+            if (event.data.startsWith("MORSE:")) {
+                const morseString = event.data.substring(6);
+                document.getElementById('morseresult').textContent = "Morse: " + morseString;
+            } else if (event.data.startsWith("TRANSLATE:")) {
+                const translatedString = event.data.substring(10);
+                document.getElementById('translatedresult').textContent = "Translated: " + translatedString;
+            } else if (event.data == "CLEAR") {
+                document.getElementById('morseresult').textContent = "Morse: ";
+                document.getElementById('translatedresult').textContent = "Translated: ";
+            } else {
+                console.log("Unknown message: " + event.data);
+            }
+        }
+    </script>
+</body>
+
+</html>
