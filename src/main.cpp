@@ -134,7 +134,7 @@ String decodeMorse(const String &morseCode)
 void clearSystems()
 {
   ws.textAll("CLEAR");
-  currentMorseWord = ""; // reset current string
+  currentMorseWord = "";
   display.clearDisplay();
   display.setCursor(0, 0);
   display.setTextSize(1);
@@ -219,7 +219,6 @@ void setup()
 {
   Serial.begin(115200);
 
-  // Setup button pin
   pinMode(BUTTON_PIN, INPUT_PULLUP);
 
   if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS))
@@ -261,10 +260,11 @@ void setup()
   server.addHandler(&ws);
   server.addHandler(&wsSound);
 
-  // setup complete
+  // setup complete //
 
-  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
-            { request->send(SPIFFS, "/index.html", "text/html"); });
+  // Serve static files from SPIFFS
+  server.serveStatic("/", SPIFFS, "/")
+    .setDefaultFile("index.html");
 
   server.onNotFound([](AsyncWebServerRequest *request)
                     { request->send(404, "text/plain", "Not found"); });
